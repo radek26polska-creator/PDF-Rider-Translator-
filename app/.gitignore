@@ -1,0 +1,17 @@
+cat > .gitignore << 'EOF'
+# Python
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Projekt
+projekt_*.txt
+app/raport_projektu.txt
+
+# IDE
+.vscode/
+.idea/
+EOF
