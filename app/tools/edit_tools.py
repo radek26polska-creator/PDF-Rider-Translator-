@@ -466,6 +466,74 @@ class PdfEditTools:
             self.status_callback(f"Błąd dodawania adnotacji liniowej: {str(e)}")
             return False
 
+    # ==================== SIGNATURES ====================
+
+    def add_signature_image(self, page_index: int, signature_path: str, pos, size=None) -> bool:
+        """Dodaj podpis jako obraz z pliku (PNG, JPG)"""
+        if not self.doc or page_index >= len(self.doc):
+            return False
+
+        try:
+            page = self.doc[page_index]
+            x, y = pos.x() / self.viewer.zoom, pos.y() / self.viewer.zoom
+
+            if size:
+                rect = fitz.Rect(x, y, x + size[0], y + size[1])
+            else:
+                # Domyślny rozmiar podpisu (4cm x 2cm)
+                rect = fitz.Rect(x, y, x + 150, y + 75)
+
+            page.insert_image(rect, filename=signature_path)
+            self.status_callback(f"Dodano podpis na stronie {page_index + 1}")
+            return True
+        except Exception as e:
+            self.status_callback(f"Błąd dodawania podpisu: {str(e)}")
+            return False
+
+    def add_signature_field(self, page_index: int, rect, field_name="signature") -> bool:
+        """Dodaj edytowalne pole podpisu (formularz PDF)"""
+        if not self.doc or page_index >= len(self.doc):
+            return False
+
+        try:
+            page = self.doc[page_index]
+            x0, y0 = rect.x0 / self.viewer.zoom, rect.y0 / self.viewer.zoom
+            x1, y1 = rect.x1 / self.viewer.zoom, rect.y1 / self.viewer.zoom
+            rect = fitz.Rect(x0, y0, x1, y1)
+
+            widget = fitz.Widget()
+            widget.rect = rect
+            widget.field_type = fitz.PDF_WIDGET_TYPE_SIGNATURE
+            widget.field_name = field_name
+            page.add_widget(widget)
+            self.status_callback(f"Dodano pole podpisu na stronie {page_index + 1}")
+            return True
+        except Exception as e:
+            self.status_callback(f"Błąd dodawania pola podpisu: {str(e)}")
+            return False
+
+    def draw_sketch_signature(self, page_index: int, points: List[tuple], color=(0, 0, 0), width=2) -> bool:
+        """
+        Narysuj podpis ręczny (odręczny) jako krzywą przez punkty.
+        points: lista (x, y) w współrzędnych ekranu (zaznaczenia myszką)
+        """
+        if not self.doc or page_index >= len(self.doc) or len(points) < 2:
+            return False
+
+        try:
+            page = self.doc[page_index]
+            # Przelicz punkty z zoom-em
+            scaled_points = [
+                (p[0] / self.viewer.zoom, p[1] / self.viewer.zoom) for p in points
+            ]
+            # Rysuj polyline (krzywa)
+            page.draw_polyline(scaled_points, color=color, width=width, closePath=False)
+            self.status_callback(f"Dodano podpis ręczny na stronie {page_index + 1}")
+            return True
+        except Exception as e:
+            self.status_callback(f"Błąd rysowania podpisu: {str(e)}")
+            return False
+
     # ==================== UTILITY ====================
 
     def delete_annotations(self, page_index: int, annot_types: List[int] = None) -> bool:
