@@ -14,10 +14,11 @@ import uuid
 from typing import Optional
 
 from converter import PDFtoDOCXConverter
+from translate import router as translate_router  # nowy moduł tłumaczenia
 
 app = FastAPI(title="PDF Rider Translator API", version="1.0.0")
 
-# CORS – umożliw frontendowi Next.js
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -25,6 +26,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routes
+app.include_router(translate_router)
 
 # Katalogi tymczasowe
 UPLOAD_DIR = Path("/tmp/pdf_rider_uploads")
