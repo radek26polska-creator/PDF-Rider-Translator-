@@ -18,50 +18,33 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor
 import fitz
-import requests
+
+# Dodaj ścieżkę do tools
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
-tools_path = os.path.join(project_root, "tools", "pdf2zh")
+tools_path = os.path.join(project_root, "tools")
 if tools_path not in sys.path:
     sys.path.insert(0, tools_path)
 
-print(f"📁 Ścieżka tools: {tools_path}")
-print(f"📁 Czy __init__.py istnieje: {os.path.exists(os.path.join(tools_path, '__init__.py'))}")
-print(f"📁 Czy high_level.py istnieje: {os.path.exists(os.path.join(tools_path, 'high_level.py'))}")
+# Import naszego prostego translatora
+from app.tools.pdf_translator import SimplePDFTranslator
 
-# Import z PDFMathTranslate - BEZPOŚREDNI IMPORT POMIJAJĄCY __init__.py
-try:
-    # Dodaj ścieżkę
-    pdf2zh_path = r"C:\Users\Radek\Desktop\PDF Rider Nex\app\tools\pdf2zh"
-    if pdf2zh_path not in sys.path:
-        sys.path.insert(0, pdf2zh_path)
-    
-    # Importuj BEZPOŚREDNIO z high_level (pomijając __init__.py)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("high_level", os.path.join(pdf2zh_path, "high_level.py"))
-    high_level = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(high_level)
-    translate_stream = high_level.translate_stream
-    
-    PDF2ZH_AVAILABLE = True
-    print("✅ PDF2ZH zaimportowany pomyślnie (bezpośrednio)!")
-except Exception as e:
-    PDF2ZH_AVAILABLE = False
-    print(f"❌ Błąd importu pdf2zh: {e}")
+PDF2ZH_AVAILABLE = True  # Nasz translator zawsze dostępny
 
 
 class PdfTranslateThread(QThread):
-    """Wątek tłumaczenia PDF z wykorzystaniem PDFMathTranslate"""
+    """Wątek tłumaczenia PDF wykorzystujący SimplePDFTranslator"""
     progress = pyqtSignal(int, str)
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
     
-    def __init__(self, pdf_path, source_lang, target_lang, pages=None):
+    def __init__(self, pdf_path, source_lang, target_lang, translator="openai", model=None):
         super().__init__()
         self.pdf_path = pdf_path
         self.source_lang = source_lang
         self.target_lang = target_lang
-        self.pages = pages
+        self.translator_name = translator
+        self.model = model
         self._is_cancelled = False
         
     def cancel(self):
@@ -71,68 +54,44 @@ class PdfTranslateThread(QThread):
         try:
             self.progress.emit(5, "Ładowanie dokumentu...")
             
-            # Mapowanie języków dla PDFMathTranslate
+            # Mapa języków
             lang_map = {
-                "polski": "pl",
-                "angielski": "en",
-                "ukraiński": "uk",
-                "hiszpański": "es",
-                "niemiecki": "de",
-                "francuski": "fr",
-                "włoski": "it",
-                "rosyjski": "ru",
-                "chiński": "zh"
+                "polski": "pl", "angielski": "en", "ukraiński": "uk",
+                "hiszpański": "es", "niemiecki": "de", "francuski": "fr",
+                "pl": "pl", "en": "en", "uk": "uk"
             }
-            
             src = lang_map.get(self.source_lang, "pl")
             dst = lang_map.get(self.target_lang, "en")
             
-            self.progress.emit(10, f"Tłumaczenie z {self.source_lang} na {self.target_lang}...")
-            
-            # Wczytaj plik PDF jako bytes
-            with open(self.pdf_path, 'rb') as f:
-                pdf_bytes = f.read()
-            
-            # Funkcja callback dla postępu
-            def progress_callback(t):
-                if hasattr(t, 'n') and hasattr(t, 'total') and t.total > 0:
-                    pct = 10 + int(80 * t.n / t.total)
-                    self.progress.emit(pct, f"Przetwarzanie strony {t.n}/{t.total}")
+            # Callback postępu
+            def progress_cb(pct, msg):
+                if not self._is_cancelled:
+                    self.progress.emit(pct, msg)
                 QApplication.processEvents()
                 if self._is_cancelled:
                     raise Exception("Anulowano")
             
-            # Właściwe tłumaczenie przez PDFMathTranslate
-            self.progress.emit(30, "Tłumaczenie treści...")
+            self.progress.emit(10, "Inicjalizacja tłumacza...")
             
-            # Parametry tłumaczenia
-            translate_args = {
-                "lang_in": src,
-                "lang_out": dst,
-                "service": "google",
-                "thread": 4,
-                "callback": progress_callback,
-                "ignore_cache": False
-            }
-            
-            if self.pages:
-                translate_args["pages"] = self.pages
-            
-            # Wykonaj tłumaczenie
-            doc_mono_bytes, doc_dual_bytes = translate_stream(
-                pdf_bytes,
-                **translate_args
+            # Stwórz translator
+            translator = SimplePDFTranslator(
+                pdf_path=self.pdf_path,
+                lang_in=src,
+                lang_out=dst,
+                translator=self.translator_name,
+                model=self.model,
+                status_callback=lambda x: self.progress.emit(0, x)
             )
             
-            if self._is_cancelled:
-                return
+            self.progress.emit(20, f"Tłumaczenie z {self.source_lang} na {self.target_lang}...")
             
-            self.progress.emit(90, "Zapisywanie przetłumaczonego dokumentu...")
-            
-            # Zapisz przetłumaczony plik (używamy mono - tylko tłumaczenie)
+            # Tłumacz
             output_path = self.get_output_path()
-            with open(output_path, 'wb') as f:
-                f.write(doc_mono_bytes)
+            success = translator.save(output_path)
+            translator.close()
+            
+            if not success:
+                raise Exception("Tłumaczenie nieudane")
             
             self.progress.emit(100, "Gotowe!")
             self.finished.emit(output_path)
@@ -140,10 +99,10 @@ class PdfTranslateThread(QThread):
         except Exception as e:
             if not self._is_cancelled:
                 self.error.emit(str(e))
-    
+     
     def get_output_path(self):
         """Generuje ścieżkę dla przetłumaczonego pliku"""
-        base_name = os.path.splitext(os.path.basename(self.pdf_path))[0]
+        base_name = os.path.splitext(os.path.basename(str(self.pdf_path)))[0]
         temp_dir = tempfile.gettempdir()
         return os.path.join(temp_dir, f"{base_name}_przetlumaczony.pdf")
 

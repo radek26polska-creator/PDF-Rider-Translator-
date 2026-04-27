@@ -1,0 +1,23 @@
+# Główne zależności Python dla PDF Rider Nex
+# Aplikacja desktopowa (PyQt5) + narzędzia
+
+# GUI
+PyQt5>=5.15.0
+
+# PDF processing
+PyMuPDF>=1.24.0  # fitz
+pdfplumber>=0.10.0  # tabele
+python-docx>=1.1.0  # DOCX export
+
+# OCR (opcjonalnie)
+pytesseract>=0.3.10
+Pillow>=10.0.0
+
+# Translations
+deepl>=1.20.0
+openai>=1.0.0
+ollama>=0.1.0
+
+# Utils
+numpy>=1.24.0
+tqdm>=4.65.0
